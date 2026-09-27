@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Word Garden</title>
 <link rel="icon" href="data:," />
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <style>
 *{ box-sizing:border-box; }
 :root{
@@ -59,6 +61,19 @@ h1{font-size:clamp(24px,7vw,30px); margin:2px 0 8px; font-weight:400; text-align
 .card h2{margin:0 0 8px; font-size:24px; font-weight:400;}
 .card p{font-family:-apple-system,Segoe UI,Roboto,sans-serif; font-size:15px; color:var(--sage-dark); margin:0 0 18px;}
 .card button{font-family:-apple-system,Segoe UI,Roboto,sans-serif; font-size:17px; font-weight:600; padding:12px 26px; border-radius:12px; border:none; background:var(--sage); color:#fff; cursor:pointer;}
+.card input[type=text]{font-family:-apple-system,Segoe UI,Roboto,sans-serif; font-size:16px; padding:10px 12px; border-radius:10px; border:2px solid var(--tile-border); width:100%; margin-bottom:14px; background:var(--tile); color:var(--ink);}
+.card .row{display:flex; gap:10px; justify-content:center;}
+.card button.secondary{background:var(--tile); color:var(--ink); border:2px solid var(--tile-border);}
+.mpStatus{font-family:-apple-system,Segoe UI,Roboto,sans-serif; font-size:13px; color:var(--sage-dark); min-height:16px; margin:-6px 0 8px; text-align:center;}
+.hidden{display:none !important;}
+.pickList{display:flex; flex-direction:column; gap:8px; margin-bottom:16px;}
+.pickList button{width:100%;}
+.chatPanel{position:fixed; left:0; right:0; bottom:0; max-width:480px; margin:0 auto; background:var(--tile); border-top:2px solid var(--tile-border); border-radius:16px 16px 0 0; box-shadow:0 -6px 20px var(--shadow); z-index:8; display:flex; flex-direction:column; max-height:50vh; max-height:50dvh;}
+.chatMessages{flex:1; overflow-y:auto; padding:10px 14px; font-family:-apple-system,Segoe UI,Roboto,sans-serif; font-size:14px;}
+.chatLine{margin-bottom:6px; color:var(--ink);}
+.chatInputRow{display:flex; gap:8px; padding:10px 12px; padding-bottom:calc(10px + env(safe-area-inset-bottom,0px)); border-top:1px solid var(--tile-border);}
+.chatInputRow input{flex:1; font-family:-apple-system,Segoe UI,Roboto,sans-serif; font-size:15px; padding:8px 12px; border-radius:20px; border:2px solid var(--tile-border); background:var(--cream); color:var(--ink);}
+.chatInputRow button{font-family:-apple-system,Segoe UI,Roboto,sans-serif; font-weight:600; padding:8px 16px; border-radius:20px; border:none; background:var(--sage); color:#fff; cursor:pointer;}
 </style>
 </head>
 <body>
@@ -72,7 +87,11 @@ h1{font-size:clamp(24px,7vw,30px); margin:2px 0 8px; font-weight:400; text-align
       <button data-d="hard">Hard</button>
     </div>
     <button class="newBtn" id="newBtn" title="New puzzle">+</button>
+    <button class="newBtn hidden" id="mpBtn" title="Play together">🎮</button>
+    <button class="newBtn hidden" id="chatToggle" title="Chat">💬</button>
+    <button class="newBtn hidden" id="leaveRoomBtn" title="Leave shared game">👋</button>
   </div>
+  <div class="mpStatus" id="mpStatus">&nbsp;</div>
   <div class="progress" id="progress"></div>
   <div class="gridwrap" id="gridwrap"><div class="grid" id="grid"></div></div>
   <div class="bonus" id="bonus">&nbsp;</div>
@@ -98,6 +117,42 @@ h1{font-size:clamp(24px,7vw,30px); margin:2px 0 8px; font-weight:400; text-align
     <h2>Not enough coins</h2>
     <p id="coinOverlayText">You need more coins for a hint.</p>
     <button id="coinOverlayBtn">OK</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="nameOverlay">
+  <div class="card">
+    <h2>What's your name?</h2>
+    <p>So the other player knows who's asking to play together.</p>
+    <input type="text" id="nameInput" maxlength="20" placeholder="Your name">
+    <button id="nameGo">Let's go</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="pickOverlay">
+  <div class="card">
+    <h2>Who do you want to play with?</h2>
+    <div class="pickList" id="pickList"></div>
+    <button class="secondary" id="pickCancel">Cancel</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="requestOverlay">
+  <div class="card">
+    <h2>Play together?</h2>
+    <p id="reqText"></p>
+    <div class="row">
+      <button id="reqAccept">\u2713 Accept</button>
+      <button class="secondary" id="reqDecline">\u2715 Not now</button>
+    </div>
+  </div>
+</div>
+
+<div class="chatPanel hidden" id="chatPanel">
+  <div class="chatMessages" id="chatMessages"></div>
+  <div class="chatInputRow">
+    <input type="text" id="chatInput" maxlength="200" placeholder="Say something\u2026">
+    <button id="chatSend">Send</button>
   </div>
 </div>
 
@@ -219,6 +274,10 @@ function startLevel(levelData, foundArr, bonusArr, hintedArr){
 
 function newPuzzle(){
   const lvl = generateLevel();
+  if(typeof MP !== 'undefined' && MP.roomId){
+    MP.db.ref('rooms/'+MP.roomId).update({ puzzle: { letters: lvl.letters, words: lvl.words }, found: [], bonus: [], hinted: [] });
+    return;
+  }
   state.level = { letters: lvl.letters, words: lvl.words };
   state.found = []; state.bonus = []; state.hinted = [];
   saveState();
@@ -393,6 +452,15 @@ function revealWordAnimated(word, onDone){
   if(cellsList.length){ step(); } else if(onDone){ onDone(); }
 }
 
+function syncProgress(){
+  if(typeof MP !== 'undefined' && MP.roomId){
+    MP.db.ref('rooms/'+MP.roomId).update({ found: Array.from(found), bonus: Array.from(bonusFound), hinted: Array.from(hintedCells) });
+  } else {
+    state.found = Array.from(found); state.bonus = Array.from(bonusFound); state.hinted = Array.from(hintedCells);
+    saveState();
+  }
+}
+
 function submitWord(word){
   if(word.length<3) return;
   if(level.words.includes(word)){
@@ -403,7 +471,7 @@ function submitWord(word){
       const praise = PRAISE[Math.floor(Math.random()*PRAISE.length)];
       setMessage(praise+' Found '+word+' (+'+coinsEarned+' \ud83e\ude99)');
       renderProgress(); updateHintState(); renderCoins();
-      state.found = Array.from(found); state.hinted = Array.from(hintedCells); saveState();
+      syncProgress();
       revealWordAnimated(word, ()=>{
         if(found.size===level.words.length){
           const reward = awardForCompletion();
@@ -420,7 +488,7 @@ function submitWord(word){
       const praise = BONUS_PRAISE[Math.floor(Math.random()*BONUS_PRAISE.length)];
       setMessage(praise+' '+word+' (+'+coinsEarned+' \ud83e\ude99)');
       renderBonus(); renderCoins();
-      state.bonus = Array.from(bonusFound); saveState();
+      syncProgress();
     }
     else setMessage('Already found that one');
   } else {
@@ -455,7 +523,7 @@ function useHint(){
   toReveal.forEach(k=> hintedCells.add(k));
   setMessage('Hint: '+numToReveal+' letter'+(numToReveal>1?'s':'')+' in a '+target.length+'-letter word (-'+cost+' \ud83e\ude99)');
   renderGrid(); renderCoins(); updateHintState();
-  state.hinted = Array.from(hintedCells); saveState();
+  syncProgress();
 }
 
 function showComplete(reward){
@@ -465,7 +533,12 @@ function showComplete(reward){
 document.getElementById('overlayBtn').addEventListener('click', ()=>{
   document.getElementById('overlay').classList.add('hidden');
   state.levelNum += 1;
+  saveState();
   const lvl = generateLevel();
+  if(typeof MP !== 'undefined' && MP.roomId){
+    MP.db.ref('rooms/'+MP.roomId).update({ puzzle: { letters: lvl.letters, words: lvl.words }, found: [], bonus: [], hinted: [] });
+    return;
+  }
   state.level = { letters: lvl.letters, words: lvl.words };
   state.found = []; state.bonus = []; state.hinted = [];
   saveState();
@@ -481,7 +554,7 @@ document.getElementById('shuffleBtn').addEventListener('click', ()=>{
   setTimeout(()=>{
     inner.classList.remove('spin');
     letters = shuffle(letters);
-    state.level.letters = letters; saveState();
+    if(!(typeof MP !== 'undefined' && MP.roomId)){ state.level.letters = letters; saveState(); }
     renderWheel();
   }, 400);
 });
@@ -505,6 +578,180 @@ function relayout(){ if(placements){ renderGrid(); renderWheel(); } }
 window.addEventListener('resize', relayout);
 window.addEventListener('orientationchange', ()=> setTimeout(relayout, 100));
 if(window.visualViewport){ window.visualViewport.addEventListener('resize', relayout); }
+
+// ---------- Multiplayer (Firebase Realtime Database) ----------
+// Fill in your own free Firebase project's config below to enable this.
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAdk7QveH71bSC8azbN-byOsmIEsHbkXjY",
+  authDomain: "wordy-e13ec.firebaseapp.com",
+  databaseURL: "https://wordy-e13ec-default-rtdb.firebaseio.com",
+  projectId: "wordy-e13ec"
+};
+
+const MP = { enabled:false, db:null, myId:null, myName:null, roomId:null, _roomListener:null, _pendingReq:null };
+
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function setMpStatus(t){ document.getElementById('mpStatus').textContent = t || '\u00A0'; }
+
+function mpInit(){
+  if(typeof firebase === 'undefined') return;
+  if(!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey.indexOf('PASTE')===0) return;
+  try{
+    firebase.initializeApp(FIREBASE_CONFIG);
+    MP.db = firebase.database();
+    MP.enabled = true;
+  }catch(e){ console.warn('Firebase init failed', e); return; }
+  document.getElementById('mpBtn').classList.remove('hidden');
+  MP.myId = localStorage.getItem('wg-my-id') || ('p_'+Math.random().toString(36).slice(2,10));
+  try{ localStorage.setItem('wg-my-id', MP.myId); }catch(e){}
+  MP.myName = (localStorage.getItem('wg-my-name')||'').trim();
+  if(!MP.myName){ document.getElementById('nameOverlay').classList.remove('hidden'); }
+  else { mpStart(); }
+}
+
+document.getElementById('nameGo').addEventListener('click', ()=>{
+  const val = document.getElementById('nameInput').value.trim();
+  if(!val) return;
+  MP.myName = val.slice(0,20);
+  try{ localStorage.setItem('wg-my-name', MP.myName); }catch(e){}
+  document.getElementById('nameOverlay').classList.add('hidden');
+  mpStart();
+});
+
+function mpStart(){
+  if(!MP.enabled) return;
+  const presenceRef = MP.db.ref('presence/'+MP.myId);
+  presenceRef.set({ name: MP.myName, ts: firebase.database.ServerValue.TIMESTAMP });
+  presenceRef.onDisconnect().remove();
+
+  MP.db.ref('requests/'+MP.myId).on('value', snap=>{
+    const val = snap.val();
+    if(val){
+      MP._pendingReq = val;
+      document.getElementById('reqText').textContent = val.fromName+' wants to play together!';
+      document.getElementById('requestOverlay').classList.remove('hidden');
+    }
+  });
+
+  MP.db.ref('playerRoom/'+MP.myId).on('value', snap=>{
+    const roomId = snap.val();
+    if(roomId && roomId !== MP.roomId){ mpJoinRoom(roomId); }
+    else if(!roomId && MP.roomId){ mpLeaveRoomLocal(); }
+  });
+}
+
+function mpListOnlineOthers(cb){
+  MP.db.ref('presence').once('value', snap=>{
+    const others = [];
+    snap.forEach(child=>{ if(child.key!==MP.myId){ others.push({ id: child.key, name: (child.val()||{}).name || 'Someone' }); } });
+    cb(others);
+  });
+}
+
+document.getElementById('mpBtn').addEventListener('click', ()=>{
+  if(!MP.enabled){ setMpStatus('Multiplayer isn\'t set up yet.'); return; }
+  mpListOnlineOthers(others=>{
+    if(others.length===0){ setMpStatus('No one else is online right now.'); }
+    else if(others.length===1){ mpSendRequest(others[0]); }
+    else {
+      const list = document.getElementById('pickList');
+      list.innerHTML = '';
+      others.forEach(o=>{
+        const btn = document.createElement('button');
+        btn.textContent = o.name;
+        btn.addEventListener('click', ()=>{ document.getElementById('pickOverlay').classList.add('hidden'); mpSendRequest(o); });
+        list.appendChild(btn);
+      });
+      document.getElementById('pickOverlay').classList.remove('hidden');
+    }
+  });
+});
+document.getElementById('pickCancel').addEventListener('click', ()=>{ document.getElementById('pickOverlay').classList.add('hidden'); });
+
+function mpSendRequest(target){
+  MP.db.ref('requests/'+target.id).set({ from: MP.myId, fromName: MP.myName, ts: Date.now() });
+  setMpStatus('Request sent to '+target.name+'\u2026');
+}
+
+document.getElementById('reqAccept').addEventListener('click', ()=>{
+  document.getElementById('requestOverlay').classList.add('hidden');
+  const req = MP._pendingReq;
+  if(!req) return;
+  const roomId = [MP.myId, req.from].sort().join('_');
+  const lvl = generateLevel();
+  MP.db.ref('rooms/'+roomId).set({
+    puzzle: { letters: lvl.letters, words: lvl.words },
+    found: [], bonus: [], hinted: [],
+    players: { [MP.myId]: MP.myName, [req.from]: req.fromName },
+    updatedAt: Date.now()
+  });
+  MP.db.ref('playerRoom/'+MP.myId).set(roomId);
+  MP.db.ref('playerRoom/'+req.from).set(roomId);
+  MP.db.ref('requests/'+MP.myId).remove();
+});
+document.getElementById('reqDecline').addEventListener('click', ()=>{
+  document.getElementById('requestOverlay').classList.add('hidden');
+  MP.db.ref('requests/'+MP.myId).remove();
+});
+
+function mpJoinRoom(roomId){
+  MP.roomId = roomId;
+  document.getElementById('leaveRoomBtn').classList.remove('hidden');
+  document.getElementById('chatToggle').classList.remove('hidden');
+  document.getElementById('chatMessages').innerHTML = '';
+  if(MP._roomListener) MP._roomListener();
+  const puzzleRef = MP.db.ref('rooms/'+roomId);
+  const handler = snap=>{
+    const val = snap.val();
+    if(!val || !val.puzzle) return;
+    startLevel({ letters: val.puzzle.letters, words: val.puzzle.words }, val.found||[], val.bonus||[], val.hinted||[]);
+  };
+  puzzleRef.on('value', handler);
+  const chatRef = MP.db.ref('rooms/'+roomId+'/chat').limitToLast(50);
+  chatRef.on('child_added', snap=> mpAppendChat(snap.val()));
+  MP._roomListener = ()=>{ puzzleRef.off('value', handler); chatRef.off('child_added'); };
+  setMpStatus('Playing together \ud83c\udf89');
+}
+
+function mpLeaveRoomLocal(){
+  MP.roomId = null;
+  document.getElementById('leaveRoomBtn').classList.add('hidden');
+  document.getElementById('chatToggle').classList.add('hidden');
+  document.getElementById('chatPanel').classList.add('hidden');
+  document.getElementById('chatMessages').innerHTML = '';
+  if(MP._roomListener){ MP._roomListener(); MP._roomListener=null; }
+  setMpStatus('');
+  if(state.level && state.level.letters && state.level.words){
+    startLevel({letters:state.level.letters, words:state.level.words}, state.found, state.bonus, state.hinted);
+  } else { newPuzzle(); }
+}
+document.getElementById('leaveRoomBtn').addEventListener('click', ()=>{
+  MP.db.ref('playerRoom/'+MP.myId).remove();
+});
+
+document.getElementById('chatToggle').addEventListener('click', ()=>{
+  document.getElementById('chatPanel').classList.toggle('hidden');
+});
+function mpSendChat(){
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if(!text || !MP.roomId) return;
+  MP.db.ref('rooms/'+MP.roomId+'/chat').push({ name: MP.myName, text: text.slice(0,200), ts: Date.now() });
+  input.value = '';
+}
+document.getElementById('chatSend').addEventListener('click', mpSendChat);
+document.getElementById('chatInput').addEventListener('keydown', e=>{ if(e.key==='Enter') mpSendChat(); });
+function mpAppendChat(msg){
+  if(!msg) return;
+  const div = document.createElement('div');
+  div.className = 'chatLine';
+  div.innerHTML = '<b>'+escapeHtml(msg.name)+':</b> '+escapeHtml(msg.text);
+  const box = document.getElementById('chatMessages');
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+mpInit();
 </script>
 </body>
 </html>
