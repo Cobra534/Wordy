@@ -126,19 +126,20 @@ function generateLevel(){
   if(state.difficulty==='easy'){ minLen=6; maxLen=Math.min(6+bump,7); }
   else if(state.difficulty==='medium'){ minLen=7; maxLen=Math.min(7+bump,8); }
   else { minLen=8; maxLen=Math.min(8+bump,9); }
-  let seed, matches, tries=0;
+  let seed, matches, connected, tries=0;
   do{
     seed = pickSeed(minLen,maxLen).toUpperCase();
     const counts = letterCounts(seed);
-    matches = DICTIONARY.filter(w=> w.length>=3 && w.length<=seed.length && wordFits(w,counts));
+    matches = Array.from(new Set(DICTIONARY.filter(w=> w.length>=3 && w.length<=seed.length && wordFits(w,counts))));
+    if(!matches.includes(seed)) matches.push(seed);
+    matches.sort((a,b)=> b.length-a.length);
+    let candidate = matches.slice(0,8);
+    if(!candidate.includes(seed)){ candidate[candidate.length-1]=seed; }
+    candidate = Array.from(new Set(candidate));
+    connected = layoutWords(candidate).map(p=>p.word);
     tries++;
-  } while(matches.length<4 && tries<15);
-  matches = Array.from(new Set(matches));
-  if(!matches.includes(seed)) matches.push(seed);
-  matches.sort((a,b)=> b.length-a.length);
-  let target = matches.slice(0,8);
-  if(!target.includes(seed)){ target[target.length-1]=seed; }
-  return { letters: shuffle(seed.split('')), words: Array.from(new Set(target)) };
+  } while(connected.length<4 && tries<15);
+  return { letters: shuffle(seed.split('')), words: connected };
 }
 
 function layoutWords(words){
@@ -188,9 +189,8 @@ function layoutWords(words){
       }
     }
     if(!placed){
-      const rows = Object.keys(grid).map(k=>parseInt(k.split(',')[0]));
-      const maxRow = rows.length? Math.max(...rows):0;
-      place(word, maxRow+2, 0, 'H');
+      // word couldn't cross into the puzzle cleanly \u2014 leave it out of the grid entirely
+      // (it stays a valid dictionary word, so it's still findable as a bonus word)
     }
   });
   return placements;
@@ -404,7 +404,14 @@ function submitWord(word){
       });
     } else { setMessage('Already found that one'); }
   } else if(DICTIONARY.includes(word) && wordFits(word, letterCounts(letters.join('')))){
-    if(!bonusFound.has(word)){ bonusFound.add(word); setMessage('Bonus word!'); renderBonus(); state.bonus = Array.from(bonusFound); saveState(); }
+    if(!bonusFound.has(word)){
+      bonusFound.add(word);
+      const coinsEarned = word.length;
+      state.coins += coinsEarned;
+      setMessage('Bonus word! '+word+' (+'+coinsEarned+' \ud83e\ude99)');
+      renderBonus(); renderCoins();
+      state.bonus = Array.from(bonusFound); saveState();
+    }
     else setMessage('Already found that one');
   } else {
     setMessage('Not in the word list');
