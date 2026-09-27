@@ -142,8 +142,8 @@ h1{font-size:clamp(24px,7vw,30px); margin:2px 0 8px; font-weight:400; text-align
     <h2>Play together?</h2>
     <p id="reqText"></p>
     <div class="row">
-      <button id="reqAccept">\u2713 Accept</button>
-      <button class="secondary" id="reqDecline">\u2715 Not now</button>
+      <button id="reqAccept">✓ Accept</button>
+      <button class="secondary" id="reqDecline">✕ Not now</button>
     </div>
   </div>
 </div>
@@ -151,7 +151,7 @@ h1{font-size:clamp(24px,7vw,30px); margin:2px 0 8px; font-weight:400; text-align
 <div class="chatPanel hidden" id="chatPanel">
   <div class="chatMessages" id="chatMessages"></div>
   <div class="chatInputRow">
-    <input type="text" id="chatInput" maxlength="200" placeholder="Say something\u2026">
+    <input type="text" id="chatInput" maxlength="200" placeholder="Say something">
     <button id="chatSend">Send</button>
   </div>
 </div>
@@ -251,7 +251,7 @@ function layoutWords(words){
       }
     }
     if(!placed){
-      // word couldn't cross into the puzzle cleanly \u2014 leave it out of the grid entirely
+      // word couldn't cross into the puzzle cleanly leave it out of the grid entirely
       // (it stays a valid dictionary word, so it's still findable as a bonus word)
     }
   });
@@ -725,7 +725,14 @@ function mpLeaveRoomLocal(){
   } else { newPuzzle(); }
 }
 document.getElementById('leaveRoomBtn').addEventListener('click', ()=>{
-  MP.db.ref('playerRoom/'+MP.myId).remove();
+  const roomId = MP.roomId;
+  if(!roomId) return;
+  MP.db.ref('rooms/'+roomId+'/players').once('value', snap=>{
+    const players = snap.val() || {};
+    const ids = Object.keys(players).length ? Object.keys(players) : [MP.myId];
+    ids.forEach(pid=> MP.db.ref('playerRoom/'+pid).remove());
+    MP.db.ref('rooms/'+roomId).remove();
+  });
 });
 
 document.getElementById('chatToggle').addEventListener('click', ()=>{
