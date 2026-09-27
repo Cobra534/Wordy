@@ -172,6 +172,7 @@ function letterCounts(word){ const c={}; for(const ch of word) c[ch]=(c[ch]||0)+
 function wordFits(word, counts){ const c={...counts}; for(const ch of word){ if(!c[ch]) return false; c[ch]--; } return true; }
 function shuffle(arr){ const a=[...arr]; for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 
+let MP = { enabled:false, db:null, myId:null, myName:null, roomId:null, _roomListener:null, _pendingReq:null };
 let state = { difficulty:'easy', levelNum:0, coins:20, totalEarned:0, level:null, found:[], bonus:[], hinted:[] };
 function saveState(){ try{ localStorage.setItem('word-garden-state', JSON.stringify(state)); }catch(e){} }
 function loadState(){ try{ const raw=localStorage.getItem('word-garden-state'); if(raw){ const p=JSON.parse(raw); if(p && p.difficulty) state=Object.assign(state,p); } }catch(e){} }
@@ -274,7 +275,7 @@ function startLevel(levelData, foundArr, bonusArr, hintedArr){
 
 function newPuzzle(){
   const lvl = generateLevel();
-  if(typeof MP !== 'undefined' && MP.roomId){
+  if(MP.roomId){
     MP.db.ref('rooms/'+MP.roomId).update({ puzzle: { letters: lvl.letters, words: lvl.words }, found: [], bonus: [], hinted: [] });
     return;
   }
@@ -453,7 +454,7 @@ function revealWordAnimated(word, onDone){
 }
 
 function syncProgress(){
-  if(typeof MP !== 'undefined' && MP.roomId){
+  if(MP.roomId){
     MP.db.ref('rooms/'+MP.roomId).update({ found: Array.from(found), bonus: Array.from(bonusFound), hinted: Array.from(hintedCells) });
   } else {
     state.found = Array.from(found); state.bonus = Array.from(bonusFound); state.hinted = Array.from(hintedCells);
@@ -535,7 +536,7 @@ document.getElementById('overlayBtn').addEventListener('click', ()=>{
   state.levelNum += 1;
   saveState();
   const lvl = generateLevel();
-  if(typeof MP !== 'undefined' && MP.roomId){
+  if(MP.roomId){
     MP.db.ref('rooms/'+MP.roomId).update({ puzzle: { letters: lvl.letters, words: lvl.words }, found: [], bonus: [], hinted: [] });
     return;
   }
@@ -554,7 +555,7 @@ document.getElementById('shuffleBtn').addEventListener('click', ()=>{
   setTimeout(()=>{
     inner.classList.remove('spin');
     letters = shuffle(letters);
-    if(!(typeof MP !== 'undefined' && MP.roomId)){ state.level.letters = letters; saveState(); }
+    if(!(MP.roomId)){ state.level.letters = letters; saveState(); }
     renderWheel();
   }, 400);
 });
@@ -587,8 +588,6 @@ const FIREBASE_CONFIG = {
   databaseURL: "https://wordy-e13ec-default-rtdb.firebaseio.com",
   projectId: "wordy-e13ec"
 };
-
-const MP = { enabled:false, db:null, myId:null, myName:null, roomId:null, _roomListener:null, _pendingReq:null };
 
 function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function setMpStatus(t){ document.getElementById('mpStatus').textContent = t || '\u00A0'; }
