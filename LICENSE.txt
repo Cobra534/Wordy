@@ -1,0 +1,5 @@
+Copyright (c) 2026 Cobo. All rights reserved.
+
+This repository and all of its contents (including but not limited to source code, artwork, audio, and game design assets) are the exclusive property of the copyright holder. 
+
+No permission is granted to copy, distribute, modify, reuse, or create derivative works from this project for any purpose, commercial or non-commercial.
