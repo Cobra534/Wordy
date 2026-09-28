@@ -18,6 +18,14 @@
   :root:not([data-theme="light"]){ --cream:#2B2A24; --ink:#F1ECDD; --sage:#8FA382; --sage-dark:#B7C6AC; --coral:#F0A87E; --tile:#3A382F; --tile-border:#55503F; --shadow:rgba(0,0,0,0.4); }
 }
 :root[data-theme="dark"]{ --cream:#2B2A24; --ink:#F1ECDD; --sage:#8FA382; --sage-dark:#B7C6AC; --coral:#F0A87E; --tile:#3A382F; --tile-border:#55503F; --shadow:rgba(0,0,0,0.4); }
+:root[data-skin="ocean"]{ --sage:#5B8FA8; --sage-dark:#3F6E86; --coral:#E8A05C; }
+:root[data-skin="sunset"]{ --sage:#C9785A; --sage-dark:#9A4F36; --coral:#7A6FA8; }
+:root[data-skin="lavender"]{ --sage:#8E7CB5; --sage-dark:#6B5A93; --coral:#E38FA8; }
+@media (prefers-color-scheme: dark){
+  :root[data-skin="ocean"]:not([data-theme="light"]){ --sage-dark:#A9CBDD; }
+  :root[data-skin="sunset"]:not([data-theme="light"]){ --sage-dark:#E6B7A3; }
+  :root[data-skin="lavender"]:not([data-theme="light"]){ --sage-dark:#CBBFE3; }
+}
 html,body{min-height:100%; margin:0;}
 @supports (min-height:100dvh){ html,body{ min-height:100dvh; } }
 html{scroll-padding-top:env(safe-area-inset-top,0px);}
@@ -62,6 +70,14 @@ h1{font-size:clamp(24px,7vw,30px); margin:2px 0 8px; font-weight:400; text-align
 .card p{font-family:-apple-system,Segoe UI,Roboto,sans-serif; font-size:15px; color:var(--sage-dark); margin:0 0 18px;}
 .card button{font-family:-apple-system,Segoe UI,Roboto,sans-serif; font-size:17px; font-weight:600; padding:12px 26px; border-radius:12px; border:none; background:var(--sage); color:#fff; cursor:pointer;}
 .card input[type=text]{font-family:-apple-system,Segoe UI,Roboto,sans-serif; font-size:16px; padding:10px 12px; border-radius:10px; border:2px solid var(--tile-border); width:100%; margin-bottom:14px; background:var(--tile); color:var(--ink);}
+.coins{cursor:pointer;}
+.shopList{display:flex; flex-direction:column; gap:10px; margin-bottom:12px; text-align:left;}
+.shopRow{display:flex; align-items:center; justify-content:space-between; gap:10px; background:var(--tile); border:2px solid var(--tile-border); border-radius:12px; padding:10px 12px; font-family:-apple-system,Segoe UI,Roboto,sans-serif;}
+.shopRow .t{font-weight:700; font-size:15px;}
+.shopRow .d{font-size:12px; opacity:.75;}
+.card .shopRow button{padding:8px 12px; font-size:14px; white-space:nowrap;}
+.card .shopRow button:disabled{opacity:.45;}
+.shopMsg{font-family:-apple-system,Segoe UI,Roboto,sans-serif; font-size:14px; color:var(--coral); min-height:20px; margin-bottom:10px;}
 .card .row{display:flex; gap:10px; justify-content:center;}
 .card button.secondary{background:var(--tile); color:var(--ink); border:2px solid var(--tile-border);}
 .mpStatus{font-family:-apple-system,Segoe UI,Roboto,sans-serif; font-size:13px; color:var(--sage-dark); min-height:16px; margin:-6px 0 8px; text-align:center;}
@@ -80,7 +96,7 @@ h1{font-size:clamp(24px,7vw,30px); margin:2px 0 8px; font-weight:400; text-align
 <div class="app">
   <h1>Word Garden</h1>
   <div class="topRow">
-    <div class="coins">🪙 <span id="coinCount">0</span></div>
+    <div class="coins" id="coinPill" title="Shop">🪙 <span id="coinCount">0</span> 🛍️</div>
     <div class="diffrow" id="diffrow">
       <button data-d="easy">Easy</button>
       <button data-d="medium">Medium</button>
@@ -120,6 +136,16 @@ h1{font-size:clamp(24px,7vw,30px); margin:2px 0 8px; font-weight:400; text-align
   </div>
 </div>
 
+<div class="overlay hidden" id="shopOverlay">
+  <div class="card">
+    <h2>Shop</h2>
+    <p id="shopCoins"></p>
+    <div class="shopList" id="shopList"></div>
+    <div class="shopMsg" id="shopMsg">&nbsp;</div>
+    <button class="secondary" id="shopClose">Close</button>
+  </div>
+</div>
+
 <div class="overlay hidden" id="nameOverlay">
   <div class="card">
     <h2>What's your name?</h2>
@@ -151,7 +177,7 @@ h1{font-size:clamp(24px,7vw,30px); margin:2px 0 8px; font-weight:400; text-align
 <div class="chatPanel hidden" id="chatPanel">
   <div class="chatMessages" id="chatMessages"></div>
   <div class="chatInputRow">
-    <input type="text" id="chatInput" maxlength="200" placeholder="Say something">
+    <input type="text" id="chatInput" maxlength="200" placeholder="Say something...">
     <button id="chatSend">Send</button>
   </div>
 </div>
@@ -172,8 +198,11 @@ function letterCounts(word){ const c={}; for(const ch of word) c[ch]=(c[ch]||0)+
 function wordFits(word, counts){ const c={...counts}; for(const ch of word){ if(!c[ch]) return false; c[ch]--; } return true; }
 function shuffle(arr){ const a=[...arr]; for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 
-let MP = { enabled:false, db:null, myId:null, myName:null, roomId:null, _roomListener:null, _pendingReq:null };
-let state = { difficulty:'easy', levelNum:0, coins:20, totalEarned:0, level:null, found:[], bonus:[], hinted:[] };
+let MP = { enabled:false, db:null, myId:null, myName:null, roomId:null, _roomListener:null, _pendingReq:null, roomDifficulty:null, roomLevelNum:0, puzzleId:null };
+let state = { difficulty:'easy', levelNum:0, coins:20, totalEarned:0, level:null, found:[], bonus:[], hinted:[], skin:'garden', ownedSkins:['garden'] };
+function curDifficulty(){ return (MP.roomId && MP.roomDifficulty) ? MP.roomDifficulty : state.difficulty; }
+function curLevelNum(){ return MP.roomId ? (MP.roomLevelNum||0) : state.levelNum; }
+function syncDiffButtons(){ const d=curDifficulty(); document.querySelectorAll('#diffrow button').forEach(b=>b.classList.toggle('active', b.dataset.d===d)); }
 function saveState(){ try{ localStorage.setItem('word-garden-state', JSON.stringify(state)); }catch(e){} }
 function loadState(){ try{ const raw=localStorage.getItem('word-garden-state'); if(raw){ const p=JSON.parse(raw); if(p && p.difficulty) state=Object.assign(state,p); } }catch(e){} }
 
@@ -182,11 +211,13 @@ function pickSeed(minLen,maxLen){
   return (c.length? c : SEED)[Math.floor(Math.random()*(c.length||SEED.length))];
 }
 
-function generateLevel(){
-  const bump = Math.floor(state.levelNum/4);
+function generateLevel(diff, lvlNum){
+  diff = diff || curDifficulty();
+  if(lvlNum==null) lvlNum = curLevelNum();
+  const bump = Math.floor(lvlNum/4);
   let minLen,maxLen;
-  if(state.difficulty==='easy'){ minLen=6; maxLen=Math.min(6+bump,7); }
-  else if(state.difficulty==='medium'){ minLen=7; maxLen=Math.min(7+bump,8); }
+  if(diff==='easy'){ minLen=6; maxLen=Math.min(6+bump,7); }
+  else if(diff==='medium'){ minLen=7; maxLen=Math.min(7+bump,8); }
   else { minLen=8; maxLen=Math.min(8+bump,9); }
   let seed, matches, connected, tries=0;
   do{
@@ -251,7 +282,7 @@ function layoutWords(words){
       }
     }
     if(!placed){
-      // word couldn't cross into the puzzle cleanly leave it out of the grid entirely
+      // word couldn't cross into the puzzle cleanly \u2014 leave it out of the grid entirely
       // (it stays a valid dictionary word, so it's still findable as a bonus word)
     }
   });
@@ -270,15 +301,20 @@ function startLevel(levelData, foundArr, bonusArr, hintedArr){
   hintedCells = new Set(hintedArr||[]);
   revealed = new Set();
   found.forEach(w=>{ const p = wordToPlacement[w]; if(p){ for(let i=0;i<p.word.length;i++){ const r=p.dir==='V'?p.row+i:p.row; const c=p.dir==='H'?p.col+i:p.col; revealed.add(r+','+c); } } });
-  renderGrid(); renderWheel(); renderProgress(); renderBonus(); renderCoins(); updateHintState(); setMessage('');
+  renderGrid(); renderWheel(); renderProgress(); renderBonus(); renderCoins(); updateHintState(); setMessage(''); syncDiffButtons();
+}
+
+function writeRoomPuzzle(lvl, levelNum){
+  MP.roomLevelNum = levelNum;
+  MP.db.ref('rooms/'+MP.roomId).update({
+    puzzle: { letters: lvl.letters, words: lvl.words }, puzzleId: 'p'+Date.now()+Math.random().toString(36).slice(2,5),
+    difficulty: curDifficulty(), levelNum: levelNum, found: [], bonus: [], hinted: [], foundBy: null, bonusBy: null, updatedAt: Date.now()
+  });
 }
 
 function newPuzzle(){
   const lvl = generateLevel();
-  if(MP.roomId){
-    MP.db.ref('rooms/'+MP.roomId).update({ puzzle: { letters: lvl.letters, words: lvl.words }, found: [], bonus: [], hinted: [] });
-    return;
-  }
+  if(MP.roomId){ writeRoomPuzzle(lvl, curLevelNum()); return; }
   state.level = { letters: lvl.letters, words: lvl.words };
   state.found = []; state.bonus = []; state.hinted = [];
   saveState();
@@ -376,7 +412,7 @@ function renderWheel(){
 }
 
 function renderProgress(){
-  document.getElementById('progress').textContent = state.difficulty[0].toUpperCase()+state.difficulty.slice(1)+' \u2014 Level '+(state.levelNum+1)+' \u2014 found '+found.size+' of '+level.words.length;
+  document.getElementById('progress').textContent = curDifficulty()[0].toUpperCase()+curDifficulty().slice(1)+' \u2014 Level '+(curLevelNum()+1)+' \u2014 found '+found.size+' of '+level.words.length;
 }
 function setMessage(t){ document.getElementById('message').textContent = t || '\u00A0'; }
 function renderBonus(){ document.getElementById('bonus').textContent = bonusFound.size ? 'Bonus words: '+Array.from(bonusFound).join(', ') : '\u00A0'; }
@@ -428,8 +464,8 @@ function onUp(){
 document.getElementById('wheelbox').addEventListener('pointerdown', onDown);
 
 function awardForCompletion(){
-  const diffMult = state.difficulty==='hard' ? 1.6 : (state.difficulty==='medium' ? 1.3 : 1);
-  const reward = Math.round((10 + state.levelNum*2) * diffMult);
+  const diffMult = curDifficulty()==='hard' ? 1.6 : (curDifficulty()==='medium' ? 1.3 : 1);
+  const reward = Math.round((10 + curLevelNum()*2) * diffMult);
   state.coins += reward;
   state.totalEarned = (state.totalEarned||0) + reward;
   return reward;
@@ -453,9 +489,11 @@ function revealWordAnimated(word, onDone){
   if(cellsList.length){ step(); } else if(onDone){ onDone(); }
 }
 
-function syncProgress(){
+function syncProgress(extra){
   if(MP.roomId){
-    MP.db.ref('rooms/'+MP.roomId).update({ found: Array.from(found), bonus: Array.from(bonusFound), hinted: Array.from(hintedCells) });
+    const upd = { found: Array.from(found), bonus: Array.from(bonusFound), hinted: Array.from(hintedCells) };
+    if(extra) Object.assign(upd, extra);
+    MP.db.ref('rooms/'+MP.roomId).update(upd);
   } else {
     state.found = Array.from(found); state.bonus = Array.from(bonusFound); state.hinted = Array.from(hintedCells);
     saveState();
@@ -472,7 +510,7 @@ function submitWord(word){
       const praise = PRAISE[Math.floor(Math.random()*PRAISE.length)];
       setMessage(praise+' Found '+word+' (+'+coinsEarned+' \ud83e\ude99)');
       renderProgress(); updateHintState(); renderCoins();
-      syncProgress();
+      syncProgress({ ['foundBy/'+word]: (MP.myName||'Your partner') });
       revealWordAnimated(word, ()=>{
         if(found.size===level.words.length){
           const reward = awardForCompletion();
@@ -489,7 +527,7 @@ function submitWord(word){
       const praise = BONUS_PRAISE[Math.floor(Math.random()*BONUS_PRAISE.length)];
       setMessage(praise+' '+word+' (+'+coinsEarned+' \ud83e\ude99)');
       renderBonus(); renderCoins();
-      syncProgress();
+      syncProgress({ ['bonusBy/'+word]: (MP.myName||'Your partner') });
     }
     else setMessage('Already found that one');
   } else {
@@ -528,18 +566,22 @@ function useHint(){
 }
 
 function showComplete(reward){
-  document.getElementById('overlayText').textContent = 'You found every word in Level '+(state.levelNum+1)+'. +'+reward+' \ud83e\ude99!';
+  document.getElementById('overlayText').textContent = 'You found every word in Level '+(curLevelNum()+1)+'. +'+reward+' \ud83e\ude99!';
   document.getElementById('overlay').classList.remove('hidden');
 }
 document.getElementById('overlayBtn').addEventListener('click', ()=>{
   document.getElementById('overlay').classList.add('hidden');
+  if(MP.roomId){
+    MP.db.ref('rooms/'+MP.roomId+'/puzzleId').once('value', snap=>{
+      if(snap.val() !== MP.puzzleId) return; // partner already moved on
+      const nl = curLevelNum()+1;
+      writeRoomPuzzle(generateLevel(curDifficulty(), nl), nl);
+    });
+    return;
+  }
   state.levelNum += 1;
   saveState();
   const lvl = generateLevel();
-  if(MP.roomId){
-    MP.db.ref('rooms/'+MP.roomId).update({ puzzle: { letters: lvl.letters, words: lvl.words }, found: [], bonus: [], hinted: [] });
-    return;
-  }
   state.level = { letters: lvl.letters, words: lvl.words };
   state.found = []; state.bonus = []; state.hinted = [];
   saveState();
@@ -562,13 +604,16 @@ document.getElementById('shuffleBtn').addEventListener('click', ()=>{
 document.getElementById('newBtn').addEventListener('click', newPuzzle);
 document.querySelectorAll('#diffrow button').forEach(btn=>{
   btn.addEventListener('click', ()=>{
-    state.difficulty = btn.dataset.d; state.levelNum = 0; saveState();
-    document.querySelectorAll('#diffrow button').forEach(b=>b.classList.toggle('active', b===btn));
+    const d = btn.dataset.d;
+    if(MP.roomId){ MP.roomDifficulty = d; MP.roomLevelNum = 0; syncDiffButtons(); writeRoomPuzzle(generateLevel(d,0), 0); return; }
+    state.difficulty = d; state.levelNum = 0; saveState();
+    syncDiffButtons();
     newPuzzle();
   });
 });
 
 loadState();
+applySkin();
 document.querySelectorAll('#diffrow button').forEach(b=> b.classList.toggle('active', b.dataset.d===state.difficulty));
 if(state.level && state.level.letters && state.level.words){
   startLevel({letters:state.level.letters, words:state.level.words}, state.found, state.bonus, state.hinted);
@@ -579,6 +624,75 @@ function relayout(){ if(placements){ renderGrid(); renderWheel(); } }
 window.addEventListener('resize', relayout);
 window.addEventListener('orientationchange', ()=> setTimeout(relayout, 100));
 if(window.visualViewport){ window.visualViewport.addEventListener('resize', relayout); }
+
+// ---------- Helpers + coin shop ----------
+function cellsOfWords(ws){
+  const set = new Set();
+  ws.forEach(w=>{ const p = wordToPlacement[w]; if(p){ for(let i=0;i<p.word.length;i++){ const r=p.dir==='V'?p.row+i:p.row; const c=p.dir==='H'?p.col+i:p.col; set.add(r+','+c); } } });
+  return set;
+}
+function finishIfComplete(){
+  if(level.words.length && found.size >= level.words.length){
+    const reward = awardForCompletion(); saveState(); renderCoins();
+    setTimeout(()=>showComplete(reward), 400);
+  }
+}
+const SKINS = [
+  { id:'garden', name:'Garden', price:0 },
+  { id:'ocean', name:'Ocean', price:60 },
+  { id:'sunset', name:'Sunset', price:60 },
+  { id:'lavender', name:'Lavender', price:60 }
+];
+function applySkin(){ document.documentElement.setAttribute('data-skin', state.skin || 'garden'); }
+function shopRow(title, desc, btnText, disabled, onClick){
+  const row = document.createElement('div'); row.className = 'shopRow';
+  const left = document.createElement('div');
+  left.innerHTML = '<div class="t">'+title+'</div><div class="d">'+desc+'</div>';
+  const btn = document.createElement('button'); btn.textContent = btnText; btn.disabled = !!disabled;
+  btn.addEventListener('click', onClick);
+  row.appendChild(left); row.appendChild(btn);
+  document.getElementById('shopList').appendChild(row);
+}
+function renderShop(msg){
+  document.getElementById('shopCoins').textContent = 'You have '+state.coins+' \ud83e\ude99';
+  document.getElementById('shopMsg').textContent = msg || '\u00A0';
+  document.getElementById('shopList').innerHTML = '';
+  const cost = getHintCost()*3;
+  shopRow('\ud83d\udd0d Reveal a word', 'Fills in the shortest word left', cost+' \ud83e\ude99', false, buyReveal);
+  SKINS.forEach(sk=>{
+    const owned = (state.ownedSkins||['garden']).includes(sk.id);
+    const inUse = (state.skin||'garden') === sk.id;
+    shopRow('\ud83c\udfa8 '+sk.name+' colors', owned ? 'Yours to keep' : 'Change the look of the game',
+      inUse ? 'In use' : (owned ? 'Use' : sk.price+' \ud83e\ude99'), inUse, ()=>buySkin(sk.id));
+  });
+}
+function openShop(){ renderShop(''); document.getElementById('shopOverlay').classList.remove('hidden'); }
+function buySkin(id){
+  const sk = SKINS.find(x=>x.id===id); if(!sk) return;
+  state.ownedSkins = state.ownedSkins || ['garden'];
+  if(!state.ownedSkins.includes(id)){
+    if(state.coins < sk.price){ renderShop('Not enough coins yet \u2014 keep playing!'); return; }
+    state.coins -= sk.price; state.ownedSkins.push(id);
+  }
+  state.skin = id; saveState(); applySkin(); renderCoins(); renderShop('Enjoy the '+sk.name+' colors!');
+}
+function buyReveal(){
+  const remaining = level.words.filter(w=>!found.has(w));
+  if(!remaining.length){ renderShop('Nothing left to reveal!'); return; }
+  const cost = getHintCost()*3;
+  if(state.coins < cost){ renderShop('Not enough coins \u2014 you need '+cost+'.'); return; }
+  state.coins -= cost; saveState();
+  remaining.sort((a,b)=>a.length-b.length);
+  const word = remaining[0];
+  found.add(word);
+  document.getElementById('shopOverlay').classList.add('hidden');
+  setMessage('Revealed: '+word+' (-'+cost+' \ud83e\ude99)');
+  renderProgress(); updateHintState(); renderCoins();
+  syncProgress({ ['foundBy/'+word]: (MP.myName||'Your partner') });
+  revealWordAnimated(word, finishIfComplete);
+}
+document.getElementById('coinPill').addEventListener('click', openShop);
+document.getElementById('shopClose').addEventListener('click', ()=>{ document.getElementById('shopOverlay').classList.add('hidden'); });
 
 // ---------- Multiplayer (Firebase Realtime Database) ----------
 // Fill in your own free Firebase project's config below to enable this.
@@ -668,7 +782,7 @@ document.getElementById('mpBtn').addEventListener('click', ()=>{
 document.getElementById('pickCancel').addEventListener('click', ()=>{ document.getElementById('pickOverlay').classList.add('hidden'); });
 
 function mpSendRequest(target){
-  MP.db.ref('requests/'+target.id).set({ from: MP.myId, fromName: MP.myName, ts: Date.now() });
+  MP.db.ref('requests/'+target.id).set({ from: MP.myId, fromName: MP.myName, ts: Date.now(), difficulty: curDifficulty(), levelNum: curLevelNum() });
   setMpStatus('Request sent to '+target.name+'\u2026');
 }
 
@@ -677,16 +791,21 @@ document.getElementById('reqAccept').addEventListener('click', ()=>{
   const req = MP._pendingReq;
   if(!req) return;
   const roomId = [MP.myId, req.from].sort().join('_');
-  const lvl = generateLevel();
-  MP.db.ref('rooms/'+roomId).set({
-    puzzle: { letters: lvl.letters, words: lvl.words },
-    found: [], bonus: [], hinted: [],
-    players: { [MP.myId]: MP.myName, [req.from]: req.fromName },
-    updatedAt: Date.now()
+  const roomRef = MP.db.ref('rooms/'+roomId);
+  roomRef.once('value', snap=>{
+    const existing = snap.val();
+    const players = { [MP.myId]: MP.myName, [req.from]: req.fromName };
+    if(existing && existing.puzzle){
+      roomRef.update({ players: players, updatedAt: Date.now() }); // restore the saved session
+    } else {
+      const diff = req.difficulty || 'easy', ln = req.levelNum || 0;
+      const lvl = generateLevel(diff, ln);
+      roomRef.set({ puzzle: { letters: lvl.letters, words: lvl.words }, puzzleId: 'p'+Date.now(), difficulty: diff, levelNum: ln, players: players, updatedAt: Date.now() });
+    }
+    MP.db.ref('playerRoom/'+MP.myId).set(roomId);
+    MP.db.ref('playerRoom/'+req.from).set(roomId);
+    MP.db.ref('requests/'+MP.myId).remove();
   });
-  MP.db.ref('playerRoom/'+MP.myId).set(roomId);
-  MP.db.ref('playerRoom/'+req.from).set(roomId);
-  MP.db.ref('requests/'+MP.myId).remove();
 });
 document.getElementById('reqDecline').addEventListener('click', ()=>{
   document.getElementById('requestOverlay').classList.add('hidden');
@@ -695,6 +814,7 @@ document.getElementById('reqDecline').addEventListener('click', ()=>{
 
 function mpJoinRoom(roomId){
   MP.roomId = roomId;
+  MP.puzzleId = null;
   document.getElementById('leaveRoomBtn').classList.remove('hidden');
   document.getElementById('chatToggle').classList.remove('hidden');
   document.getElementById('chatMessages').innerHTML = '';
@@ -703,17 +823,49 @@ function mpJoinRoom(roomId){
   const handler = snap=>{
     const val = snap.val();
     if(!val || !val.puzzle) return;
-    startLevel({ letters: val.puzzle.letters, words: val.puzzle.words }, val.found||[], val.bonus||[], val.hinted||[]);
+    MP.roomDifficulty = val.difficulty || 'easy';
+    MP.roomLevelNum = val.levelNum || 0;
+    const foundArr = val.found||[], bonusArr = val.bonus||[], hintedArr = val.hinted||[];
+    const pid = val.puzzleId || ((val.puzzle.letters||[]).join('')+'|'+(val.puzzle.words||[]).join(','));
+    if(pid !== MP.puzzleId){
+      MP.puzzleId = pid;
+      document.getElementById('overlay').classList.add('hidden');
+      startLevel({ letters: val.puzzle.letters, words: val.puzzle.words }, foundArr, bonusArr, hintedArr);
+      if(level.words.length && found.size >= level.words.length) setMessage('All done here \u2014 tap + for a new puzzle');
+      return;
+    }
+    syncDiffButtons(); renderProgress();
+    const newBonus = bonusArr.filter(w=>!bonusFound.has(w));
+    if(newBonus.length){
+      newBonus.forEach(w=>bonusFound.add(w));
+      setMessage(((val.bonusBy||{})[newBonus[0]]||'Your partner')+' found bonus word '+newBonus[0]+'!');
+      renderBonus();
+    }
+    const newFound = foundArr.filter(w=>!found.has(w));
+    const doneCells = cellsOfWords(foundArr);
+    const nh = new Set(hintedArr.filter(k=>!doneCells.has(k) && !revealed.has(k)));
+    const hintChanged = nh.size !== hintedCells.size || Array.from(nh).some(k=>!hintedCells.has(k));
+    if(hintChanged) hintedCells = nh;
+    if(newFound.length){
+      const queue = newFound.slice();
+      newFound.forEach(w=>found.add(w));
+      setMessage('\ud83c\udf89 '+((val.foundBy||{})[newFound[0]]||'Your partner')+' found '+newFound[0]+'!');
+      renderProgress(); updateHintState();
+      (function next(){ const w = queue.shift(); if(!w){ finishIfComplete(); return; } revealWordAnimated(w, next); })();
+    } else if(hintChanged){ renderGrid(); }
   };
   puzzleRef.on('value', handler);
+  let chatReady = false;
   const chatRef = MP.db.ref('rooms/'+roomId+'/chat').limitToLast(50);
-  chatRef.on('child_added', snap=> mpAppendChat(snap.val()));
+  chatRef.on('child_added', snap=> mpAppendChat(snap.val(), chatReady));
+  setTimeout(()=>{ chatReady = true; }, 600);
   MP._roomListener = ()=>{ puzzleRef.off('value', handler); chatRef.off('child_added'); };
   setMpStatus('Playing together \ud83c\udf89');
 }
 
 function mpLeaveRoomLocal(){
-  MP.roomId = null;
+  MP.roomId = null; MP.roomDifficulty = null; MP.roomLevelNum = 0; MP.puzzleId = null;
+  document.getElementById('overlay').classList.add('hidden');
   document.getElementById('leaveRoomBtn').classList.add('hidden');
   document.getElementById('chatToggle').classList.add('hidden');
   document.getElementById('chatPanel').classList.add('hidden');
@@ -730,8 +882,7 @@ document.getElementById('leaveRoomBtn').addEventListener('click', ()=>{
   MP.db.ref('rooms/'+roomId+'/players').once('value', snap=>{
     const players = snap.val() || {};
     const ids = Object.keys(players).length ? Object.keys(players) : [MP.myId];
-    ids.forEach(pid=> MP.db.ref('playerRoom/'+pid).remove());
-    MP.db.ref('rooms/'+roomId).remove();
+    ids.forEach(pid=> MP.db.ref('playerRoom/'+pid).remove()); // room data stays so you can pick up where you left off
   });
 });
 
@@ -747,8 +898,9 @@ function mpSendChat(){
 }
 document.getElementById('chatSend').addEventListener('click', mpSendChat);
 document.getElementById('chatInput').addEventListener('keydown', e=>{ if(e.key==='Enter') mpSendChat(); });
-function mpAppendChat(msg){
+function mpAppendChat(msg, autoOpen){
   if(!msg) return;
+  if(autoOpen) document.getElementById('chatPanel').classList.remove('hidden');
   const div = document.createElement('div');
   div.className = 'chatLine';
   div.innerHTML = '<b>'+escapeHtml(msg.name)+':</b> '+escapeHtml(msg.text);
