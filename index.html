@@ -425,7 +425,7 @@ function renderGrid(justKey){
   const availW = Math.min(vw, appMaxWidth) - 44;
   const wheelEstimate = Math.min(vw - 40, 300) + 16;
   const fit = vh - spaceUsedBy(['gridwrap','wheelbox']) - wheelEstimate;
-  const availH = Math.min(Math.max(fit, vh*0.44), vh*0.62);
+  const availH = Math.min(Math.max(fit, 90), vh*0.5);
   const gap = 4;
   let cellSize = Math.floor(Math.min((availW - gap*(cols-1))/cols, (availH - gap*(rows-1))/rows, 64));
   cellSize = Math.max(cellSize, 18);
@@ -889,7 +889,17 @@ function mpStart(){
 
   MP.db.ref('playerRoom/'+MP.myId).on('value', snap=>{
     const roomId = snap.val();
-    if(roomId && roomId !== MP.roomId){ mpJoinRoom(roomId); }
+    if(roomId && roomId !== MP.roomId){
+      const oldRoomId = MP.roomId;
+      if(oldRoomId){
+        // switching straight into a different game \u2014 disconnect whoever was with us in the old one first
+        MP.db.ref('rooms/'+oldRoomId+'/players').once('value', s2=>{
+          const players = s2.val() || {};
+          Object.keys(players).forEach(pid=>{ if(pid !== MP.myId) MP.db.ref('playerRoom/'+pid).remove(); });
+        });
+      }
+      mpJoinRoom(roomId);
+    }
     else if(!roomId && MP.roomId){ mpLeaveRoomLocal(); }
   });
 }
