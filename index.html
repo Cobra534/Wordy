@@ -854,7 +854,7 @@ const IS_ADMIN = (()=>{ try{ return new URLSearchParams(location.search).get('ad
 // To change it: in a browser console run
 //   crypto.subtle.digest('SHA-256', new TextEncoder().encode('yourNewPassword')).then(b=>console.log([...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')))
 // then paste the printed hash below.
-const ADMIN_PASSWORD_HASH = 'ab12b2d933bc4db1150ee1a7ee85a5b438ed202f6d4edb686ed9daa44e2ad477';
+const ADMIN_PASSWORD_HASH = 'd07164a628596323ebcf8796dee0e5c164620e0922b52483bc805f54416ee73c';
 async function sha256Hex(text){
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
