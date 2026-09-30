@@ -7,6 +7,7 @@
 <link rel="icon" href="data:," />
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check-compat.js"></script>
 <style>
 *{ box-sizing:border-box; }
 :root{
@@ -148,6 +149,26 @@ h1{font-size:clamp(24px,7vw,30px); margin:2px 0 8px; font-weight:400; text-align
     <h2 id="infoTitle"></h2>
     <p id="infoText"></p>
     <button id="infoOk">OK</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="adminPassOverlay">
+  <div class="card">
+    <h2>Admin password</h2>
+    <p>Enter the admin password to continue.</p>
+    <input type="password" id="adminPassInput" placeholder="Password">
+    <p class="shopMsg" id="adminPassMsg">&nbsp;</p>
+    <div class="row">
+      <button id="adminPassGo">Enter</button>
+      <button class="secondary" id="adminPassCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="banOverlay" style="z-index:20;">
+  <div class="card">
+    <h2>Game paused</h2>
+    <p>The game admin has paused your access for now. Ask them if you think this is a mistake — it can be undone any time.</p>
   </div>
 </div>
 
@@ -829,6 +850,16 @@ document.getElementById('shopClose').addEventListener('click', ()=>{ document.ge
 
 // ---------- Admin panel ----------
 const IS_ADMIN = (()=>{ try{ return new URLSearchParams(location.search).get('admin')==='1'; }catch(e){ return false; } })();
+// SHA-256 hash of the admin password (default password: gardenadmin).
+// To change it: in a browser console run
+//   crypto.subtle.digest('SHA-256', new TextEncoder().encode('yourNewPassword')).then(b=>console.log([...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')))
+// then paste the printed hash below.
+const ADMIN_PASSWORD_HASH = 'ab12b2d933bc4db1150ee1a7ee85a5b438ed202f6d4edb686ed9daa44e2ad477';
+async function sha256Hex(text){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+let adminAuthed = false;
 function syncProfile(){
   if(!MP.enabled || !MP.myId || !MP.myName) return;
   try{
@@ -870,7 +901,8 @@ function renderAdminList(){
       const addBtn = document.createElement('button'); addBtn.textContent = '+ Add coins';
       const setBtn = document.createElement('button'); setBtn.textContent = 'Set coins';
       const hintBtn = document.createElement('button'); hintBtn.textContent = 'Give free hints';
-      grid1.appendChild(addBtn); grid1.appendChild(setBtn); grid1.appendChild(hintBtn);
+      const hintClearBtn = document.createElement('button'); hintClearBtn.textContent = 'Clear free hints';
+      grid1.appendChild(addBtn); grid1.appendChild(setBtn); grid1.appendChild(hintBtn); grid1.appendChild(hintClearBtn);
       const grid2 = document.createElement('div'); grid2.className = 'adminGrid';
       grid2.innerHTML = '<input type="number" class="hc" placeholder="Hint cost (\ud83e\ude99)">';
       const hcSet = document.createElement('button'); hcSet.textContent = 'Set';
@@ -887,14 +919,25 @@ function renderAdminList(){
       const spReveal = document.createElement('button'); spReveal.textContent = 'Set Reveal';
       const spSkins = document.createElement('button'); spSkins.textContent = 'Set all skins';
       grid4.appendChild(spBoost); grid4.appendChild(spReveal); grid4.appendChild(spSkins);
-      row.appendChild(grid1); row.appendChild(grid2); row.appendChild(grid3); row.appendChild(grid4);
+      const banned = !!(players[id]||{}).banned;
+      const grid5 = document.createElement('div'); grid5.className = 'adminGrid';
+      grid5.innerHTML = '<input type="text" class="nm" placeholder="New name" maxlength="20">';
+      const nmBtn = document.createElement('button'); nmBtn.textContent = 'Rename';
+      const banBtn = document.createElement('button'); banBtn.textContent = banned ? 'Unban' : 'Ban';
+      banBtn.style.color = banned ? '' : 'var(--coral)';
+      grid5.appendChild(nmBtn); grid5.appendChild(banBtn);
+      row.appendChild(grid1); row.appendChild(grid2); row.appendChild(grid3); row.appendChild(grid4); row.appendChild(grid5);
       list.appendChild(row);
 
       const send = (obj)=> MP.db.ref('players/'+id+'/admin').update(obj);
+      const txt = (sel)=> row.querySelector(sel).value.trim();
+      nmBtn.addEventListener('click', ()=>{ const v=txt('.nm'); if(v) send({setName:v}); });
+      banBtn.addEventListener('click', ()=>{ MP.db.ref('players/'+id+'/banned').set(!banned); renderAdminList(); });
       const num = (sel)=> { const v = parseFloat(row.querySelector(sel).value); return isNaN(v) ? null : v; };
       addBtn.addEventListener('click', ()=>{ const v=num('.amt'); if(v!==null) send({addCoins:v}); });
       setBtn.addEventListener('click', ()=>{ const v=num('.amt'); if(v!==null) send({setCoins:v}); });
       hintBtn.addEventListener('click', ()=>{ const v=num('.amt')||1; send({freeHints:v}); });
+      hintClearBtn.addEventListener('click', ()=> send({setFreeHints:0}));
       hcSet.addEventListener('click', ()=>{ const v=num('.hc'); if(v!==null) send({hintCostOverride:v}); });
       hcClear.addEventListener('click', ()=> send({hintCostOverride:null}));
       dbSet.addEventListener('click', ()=>{ const v=num('.db'); if(v!==null) send({dailyBonusOverride:v}); });
@@ -908,11 +951,33 @@ function renderAdminList(){
 if(IS_ADMIN){
   document.getElementById('adminBtn').classList.remove('hidden');
   document.getElementById('adminBtn').addEventListener('click', ()=>{
-    renderAdminList();
-    document.getElementById('adminOverlay').classList.remove('hidden');
+    if(adminAuthed){ renderAdminList(); document.getElementById('adminOverlay').classList.remove('hidden'); return; }
+    document.getElementById('adminPassInput').value = '';
+    document.getElementById('adminPassMsg').textContent = '\u00A0';
+    document.getElementById('adminPassOverlay').classList.remove('hidden');
   });
+  document.getElementById('adminPassGo').addEventListener('click', async ()=>{
+    const pw = document.getElementById('adminPassInput').value;
+    const hash = await sha256Hex(pw);
+    if(hash === ADMIN_PASSWORD_HASH){
+      adminAuthed = true;
+      document.getElementById('adminPassOverlay').classList.add('hidden');
+      renderAdminList();
+      document.getElementById('adminOverlay').classList.remove('hidden');
+    } else {
+      document.getElementById('adminPassMsg').textContent = 'Wrong password.';
+    }
+  });
+  document.getElementById('adminPassCancel').addEventListener('click', ()=> document.getElementById('adminPassOverlay').classList.add('hidden'));
   document.getElementById('adminRefresh').addEventListener('click', renderAdminList);
   document.getElementById('adminClose').addEventListener('click', ()=> document.getElementById('adminOverlay').classList.add('hidden'));
+}
+// Every device checks whether *it* has been paused by the admin — independent of whether this device is the admin.
+function watchBanStatus(){
+  if(!MP.myId) return;
+  MP.db.ref('players/'+MP.myId+'/banned').on('value', snap=>{
+    document.getElementById('banOverlay').classList.toggle('hidden', !snap.val());
+  });
 }
 
 // ---------- Multiplayer (Firebase Realtime Database) ----------
@@ -923,6 +988,9 @@ const FIREBASE_CONFIG = {
   databaseURL: "https://wordy-e13ec-default-rtdb.firebaseio.com",
   projectId: "wordy-e13ec"
 };
+// Paste your reCAPTCHA v3 SITE key here (from google.com/recaptcha/admin) to turn on App Check.
+// Leave as-is to skip it \u2014 the game works fine either way, this just adds the extra protection layer.
+const RECAPTCHA_V3_SITE_KEY = "PASTE_YOUR_RECAPTCHA_SITE_KEY";
 
 function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function setMpStatus(t){ document.getElementById('mpStatus').textContent = t || '\u00A0'; }
@@ -947,6 +1015,12 @@ function mpInit(){
     MP.db = firebase.database();
     MP.enabled = true;
   }catch(e){ console.warn('Firebase init failed', e); return; }
+  if(RECAPTCHA_V3_SITE_KEY && RECAPTCHA_V3_SITE_KEY.indexOf('PASTE')!==0){
+    try{
+      const appCheck = firebase.appCheck();
+      appCheck.activate(RECAPTCHA_V3_SITE_KEY, true); // true = auto-refresh tokens
+    }catch(e){ console.warn('App Check failed to start', e); }
+  }
   document.getElementById('mpBtn').classList.remove('hidden');
   MP.myId = localStorage.getItem('wg-my-id') || ('p_'+Math.random().toString(36).slice(2,10));
   try{ localStorage.setItem('wg-my-id', MP.myId); }catch(e){}
@@ -980,6 +1054,11 @@ function mpStart(){
   presenceRef.onDisconnect().remove();
 
   syncProfile();
+  watchBanStatus();
+  MP.db.ref('declines/'+MP.myId).on('child_added', snap=>{
+    const v = snap.val(); snap.ref.remove();
+    setMpStatus(((v&&v.name)||'They')+' said not now.');
+  });
   MP.db.ref('players/'+MP.myId+'/admin').on('value', snap=>{
     const cmd = snap.val();
     if(!cmd) return;
@@ -987,6 +1066,14 @@ function mpStart(){
     if(typeof cmd.addCoins === 'number' && cmd.addCoins){ state.coins += cmd.addCoins; touched = true; }
     if(typeof cmd.setCoins === 'number'){ state.coins = cmd.setCoins; touched = true; }
     if(typeof cmd.freeHints === 'number' && cmd.freeHints){ state.freeHints = (state.freeHints||0) + cmd.freeHints; touched = true; }
+    if(typeof cmd.setFreeHints === 'number'){ state.freeHints = cmd.setFreeHints; touched = true; }
+    if(typeof cmd.setName === 'string' && cmd.setName.trim()){
+      MP.myName = cmd.setName.trim().slice(0,20);
+      try{ localStorage.setItem('wg-my-name', MP.myName); }catch(e){}
+      MP.db.ref('presence/'+MP.myId+'/name').set(MP.myName);
+      if(MP.roomId) MP.db.ref('rooms/'+MP.roomId+'/players/'+MP.myId).set(MP.myName);
+      touched = true;
+    }
     if(Object.prototype.hasOwnProperty.call(cmd,'hintCostOverride')){ state.hintCostOverride = cmd.hintCostOverride; touched = true; }
     if(Object.prototype.hasOwnProperty.call(cmd,'dailyBonusOverride')){ state.dailyBonusOverride = cmd.dailyBonusOverride; touched = true; }
     if(cmd.shopOverrides){ state.shopOverrides = Object.assign({}, state.shopOverrides||{}, cmd.shopOverrides); touched = true; }
@@ -1086,7 +1173,9 @@ document.getElementById('reqAccept').addEventListener('click', ()=>{
 });
 document.getElementById('reqDecline').addEventListener('click', ()=>{
   document.getElementById('requestOverlay').classList.add('hidden');
+  const req = MP._pendingReq;
   MP.db.ref('requests/'+MP.myId).remove();
+  if(req && req.from){ MP.db.ref('declines/'+req.from).push({ name: MP.myName, ts: Date.now() }); }
 });
 
 function mpJoinRoom(roomId){
