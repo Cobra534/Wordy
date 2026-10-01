@@ -302,7 +302,7 @@ function generateLevel(diff, lvlNum){
     matches.sort((a,b)=> (diff==='medium' ? (EASYSET.has(b)?1:0)-(EASYSET.has(a)?1:0) : 0) || b.length-a.length);
     let candidate = matches.slice(0,9);
     if(!candidate.includes(seed)){ candidate[candidate.length-1]=seed; }
-    candidate = Array.from(new Set(candidate));
+    candidate = Array.from(new Set(candidate));              // never the same word twice
     candidate = [seed].concat(candidate.filter(w=>w!==seed));
     connected = bestLayout(candidate).map(p=>p.word);
     tries++;
@@ -390,15 +390,21 @@ function layoutWords(words){
 }
 
 let level, placements, wordToPlacement, revealed, found, bonusFound, hintedCells, letters, centers, dragging=false, path=[];
+let levelSerial = 0, completedSerial = -1; // levelSerial changes with every new puzzle so late timers/animations can be ignored
+
+function isComplete(){ return !!(level && level.words.length && level.words.every(w=>found.has(w))); }
 
 function startLevel(levelData, foundArr, bonusArr, hintedArr){
-  level = levelData;
+  levelSerial++;
+  document.getElementById('overlay').classList.add('hidden'); // a "well done" card never outlives its puzzle
+  level = { letters: levelData.letters, words: Array.from(new Set(levelData.words)) };
   placements = layoutWords(level.words);
   wordToPlacement = {}; placements.forEach(p=> wordToPlacement[p.word]=p);
   letters = level.letters;
-  found = new Set(foundArr||[]);
+  found = new Set((foundArr||[]).filter(w=>level.words.includes(w))); // ignore leftovers from other puzzles
   bonusFound = new Set(bonusArr||[]);
-  hintedCells = new Set(hintedArr||[]);
+  const validCells = cellsOfWords(level.words);
+  hintedCells = new Set((hintedArr||[]).filter(k=>validCells.has(k)));
   revealed = new Set();
   found.forEach(w=>{ const p = wordToPlacement[w]; if(p){ for(let i=0;i<p.word.length;i++){ const r=p.dir==='V'?p.row+i:p.row; const c=p.dir==='H'?p.col+i:p.col; revealed.add(r+','+c); } } });
   renderGrid(); renderWheel(); renderProgress(); renderBonus(); renderCoins(); updateHintState(); setMessage(''); syncDiffButtons();
@@ -583,11 +589,13 @@ function awardForCompletion(){
 }
 
 function revealWordAnimated(word, onDone){
+  const serial = levelSerial;
   const p = wordToPlacement[word];
   const cellsList = [];
   if(p){ for(let i=0;i<p.word.length;i++){ const r=p.dir==='V'?p.row+i:p.row; const c=p.dir==='H'?p.col+i:p.col; cellsList.push(r+','+c); } }
   let idx = 0;
   function step(){
+    if(serial !== levelSerial) return; // the puzzle changed mid-animation
     if(idx < cellsList.length){
       const key = cellsList[idx];
       revealed.add(key);
@@ -632,13 +640,8 @@ function submitWord(word){
       setMessage(praise+' Found '+word+' (+'+coinsEarned+' \ud83e\ude99)');
       renderProgress(); updateHintState(); renderCoins();
       mpMarkFound(word);
-      revealWordAnimated(word, ()=>{
-        if(found.size===level.words.length){
-          const reward = awardForCompletion();
-          saveState(); renderCoins();
-          setTimeout(()=>showComplete(reward),400);
-        }
-      });
+      const serial = levelSerial;
+      revealWordAnimated(word, ()=> finishIfComplete(serial));
     } else { setMessage('Already found that one'); }
   } else if(VALID.has(word) && wordFits(word, letterCounts(letters.join('')))){
     if(!bonusFound.has(word)){
@@ -748,11 +751,13 @@ function cellsOfWords(ws){
   ws.forEach(w=>{ const p = wordToPlacement[w]; if(p){ for(let i=0;i<p.word.length;i++){ const r=p.dir==='V'?p.row+i:p.row; const c=p.dir==='H'?p.col+i:p.col; set.add(r+','+c); } } });
   return set;
 }
-function finishIfComplete(){
-  if(level.words.length && found.size >= level.words.length){
-    const reward = awardForCompletion(); saveState(); renderCoins();
-    setTimeout(()=>showComplete(reward), 400);
-  }
+function finishIfComplete(serial){
+  if(serial !== undefined && serial !== levelSerial) return;
+  if(!isComplete() || completedSerial === levelSerial) return; // only once per puzzle, only when every word is truly found
+  completedSerial = levelSerial;
+  const reward = awardForCompletion(); saveState(); renderCoins();
+  const mine = levelSerial;
+  setTimeout(()=>{ if(mine === levelSerial && isComplete()) showComplete(reward); }, 400);
 }
 const SKINS = [
   { id:'garden', name:'Garden', price:0 },
@@ -812,7 +817,7 @@ function buyReveal(){
   setMessage('Revealed: '+word+' (-'+cost+' \ud83e\ude99)');
   renderProgress(); updateHintState(); renderCoins();
   mpMarkFound(word);
-  revealWordAnimated(word, finishIfComplete);
+  { const serial = levelSerial; revealWordAnimated(word, ()=> finishIfComplete(serial)); }
 }
 function buyBoost(){
   if(boostActive()){ renderShop('Already active on this puzzle!'); return; }
@@ -983,14 +988,15 @@ function watchBanStatus(){
 // ---------- Multiplayer (Firebase Realtime Database) ----------
 // Fill in your own free Firebase project's config below to enable this.
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyAdk7QveH71bSC8azbN-byOsmIEsHbkXjY",
-  authDomain: "wordy-e13ec.firebaseapp.com",
-  databaseURL: "https://wordy-e13ec-default-rtdb.firebaseio.com",
-  projectId: "wordy-e13ec"
+  apiKey: "AIzaSyDcXMj8objFP_yKjwcyIUfIMF8iZwMD0A8",
+  authDomain: "wordy-96eeb.firebaseapp.com",
+  databaseURL: "https://wordy-96eeb-default-rtdb.firebaseio.com",
+  projectId: "wordy-96eeb",
+  appId: "1:66688441170:web:73415171e708fb8714f88b" // required by App Check
 };
-// Paste your reCAPTCHA v3 SITE key here (from google.com/recaptcha/admin) to turn on App Check.
-// Leave as-is to skip it \u2014 the game works fine either way, this just adds the extra protection layer.
-const RECAPTCHA_V3_SITE_KEY = "PASTE_YOUR_RECAPTCHA_SITE_KEY";
+// reCAPTCHA Enterprise (Google Cloud "Fraud Defense") site key used by Firebase App Check.
+// This key is meant to be public \u2014 it only works on the domains you allowed for it in Google Cloud.
+const RECAPTCHA_ENTERPRISE_SITE_KEY = "6LcCVNgtAAAAABZWqZgMp0Bw2Ekp4oaeqsbcIIPP";
 
 function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function setMpStatus(t){ document.getElementById('mpStatus').textContent = t || '\u00A0'; }
@@ -1012,15 +1018,24 @@ function mpInit(){
   if(!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey.indexOf('PASTE')===0) return;
   try{
     firebase.initializeApp(FIREBASE_CONFIG);
+    // App Check must start BEFORE the database connects so the very first request carries a token.
+    if(RECAPTCHA_ENTERPRISE_SITE_KEY && RECAPTCHA_ENTERPRISE_SITE_KEY.indexOf('PASTE')!==0){
+      try{
+        firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(RECAPTCHA_ENTERPRISE_SITE_KEY), true);
+      }catch(e){ console.warn('App Check failed to start', e); }
+    }
     MP.db = firebase.database();
     MP.enabled = true;
   }catch(e){ console.warn('Firebase init failed', e); return; }
-  if(RECAPTCHA_V3_SITE_KEY && RECAPTCHA_V3_SITE_KEY.indexOf('PASTE')!==0){
-    try{
-      const appCheck = firebase.appCheck();
-      appCheck.activate(RECAPTCHA_V3_SITE_KEY, true); // true = auto-refresh tokens
-    }catch(e){ console.warn('App Check failed to start', e); }
-  }
+  // If the database never connects (e.g. protection rejects this device), say so instead of failing silently.
+  let everConnected = false, warned = false;
+  MP.db.ref('.info/connected').on('value', snap=>{
+    if(snap.val() === true){
+      everConnected = true;
+      if(warned){ warned = false; setMpStatus(''); }
+    }
+  });
+  setTimeout(()=>{ if(!everConnected){ warned = true; setMpStatus("Can't reach multiplayer right now \u2014 solo play still works."); } }, 12000);
   document.getElementById('mpBtn').classList.remove('hidden');
   MP.myId = localStorage.getItem('wg-my-id') || ('p_'+Math.random().toString(36).slice(2,10));
   try{ localStorage.setItem('wg-my-id', MP.myId); }catch(e){}
@@ -1194,13 +1209,14 @@ function mpJoinRoom(roomId){
     const pk = Object.keys(val.players||{}).find(k=>k!==MP.myId);
     MP.partnerId = pk || null; MP.partnerName = pk ? val.players[pk] : null;
     const foundMap = val.found||{}, bonusMap = val.bonus||{}, hintedMap = val.hinted||{};
-    const foundArr = Object.keys(foundMap), bonusArr = Object.keys(bonusMap), hintedArr = Object.keys(hintedMap);
+    const puzzleWords = Object.keys(val.puzzle.words || {}).map(k=>val.puzzle.words[k]);
+    const foundArr = Object.keys(foundMap).filter(w=>puzzleWords.includes(w)), bonusArr = Object.keys(bonusMap), hintedArr = Object.keys(hintedMap);
     const pid = val.puzzleId || ((val.puzzle.letters||[]).join('')+'|'+(val.puzzle.words||[]).join(','));
     if(pid !== MP.puzzleId){
       MP.puzzleId = pid;
       document.getElementById('overlay').classList.add('hidden');
       startLevel({ letters: val.puzzle.letters, words: val.puzzle.words }, foundArr, bonusArr, hintedArr);
-      if(level.words.length && found.size >= level.words.length) setMessage('All done here \u2014 tap + for a new puzzle');
+      if(isComplete()) setMessage('All done here \u2014 tap + for a new puzzle');
       return;
     }
     syncDiffButtons(); renderProgress();
@@ -1220,7 +1236,8 @@ function mpJoinRoom(roomId){
       newFound.forEach(w=>found.add(w));
       setMessage('\ud83c\udf89 '+(foundMap[newFound[0]]||'Your partner')+' found '+newFound[0]+'!');
       renderProgress(); updateHintState();
-      (function next(){ const w = queue.shift(); if(!w){ finishIfComplete(); return; } revealWordAnimated(w, next); })();
+      const serial = levelSerial;
+      (function next(){ if(serial !== levelSerial) return; const w = queue.shift(); if(!w){ finishIfComplete(serial); return; } revealWordAnimated(w, next); })();
     } else if(hintChanged){ renderGrid(); }
   };
   puzzleRef.on('value', handler);
