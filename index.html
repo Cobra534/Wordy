@@ -1094,7 +1094,7 @@ function mpStart(){
     if(cmd.shopOverrides){ state.shopOverrides = Object.assign({}, state.shopOverrides||{}, cmd.shopOverrides); touched = true; }
     if(touched){
       saveState(); renderCoins(); updateHintState(); syncProfile();
-      showInfo('\ud83d\udee0\ufe0f Settings updated', 'The game admin made a change to your account.');
+      showInfo('\ud83d\udee0\ufe0f Settings updated', 'The game admin Coby made a change to your account.');
       MP.db.ref('players/'+MP.myId+'/admin').remove();
     }
   });
